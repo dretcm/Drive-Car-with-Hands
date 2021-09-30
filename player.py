@@ -6,6 +6,7 @@ import cv2
 import mediapipe as mp
 import threading
 
+
 pygame.init()
 
 
@@ -36,9 +37,17 @@ class BASE:
 
 
 
+def cv2image_to_pygame(image):
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return pygame.image.frombuffer(image.tostring(), image.shape[1::-1], "RGB")
+
+
+
 class Player(BASE):
         def __init__(self, window_size):
                 super().__init__(window_size)
+
+                self.window_size = window_size
 
                 self.death = False
                 self.left = False
@@ -48,8 +57,17 @@ class Player(BASE):
 
                 self.image = load_image('images/cars/mycar.png', size=self.size)
 
-                tp = threading.Thread(target=self.camera_activate)
-                tp.start()
+
+                self.pos_camera = (10,20)
+                self.size_camera = (230,200)
+                self.camera_img = None
+
+                self.mp_drawing = mp.solutions.drawing_utils
+                self.mp_hands = mp.solutions.hands
+                self.cap = cv2.VideoCapture(0)
+##                tp = threading.Thread(target=self.camera_activate)
+##                tp.start()
+
 
         def direction(self, left, right):
                 difference = 100
@@ -67,51 +85,47 @@ class Player(BASE):
                         self.right = False
                         #print("normal")
 
-        def camera_activate(self):                      
-                mp_drawing = mp.solutions.drawing_utils
-                mp_hands = mp.solutions.hands
-                cap = cv2.VideoCapture(0)
-
-                with mp_hands.Hands(
+        def camera_activate(self):
+                with self.mp_hands.Hands(
                     static_image_mode=False,
                     max_num_hands=2,
                     min_detection_confidence=0.5) as hands:
-                        while True:
-                                ret, frame = cap.read()
-                                if ret == False:
-                                    break
-                                height, width, _ = frame.shape
-                                frame = cv2.flip(frame, 1)
-                                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                results = hands.process(frame_rgb)
-                                thumbs = []
-                                if results.multi_hand_landmarks is not None:
-                                        for hand_landmarks in results.multi_hand_landmarks:
-                                                x = int(hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP].x * width)
-                                                y = int(hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP].y * height)
-                                                #cv2.circle(frame, (x, y), 3,(0,255,0),3)
-                                                thumbs.append((x,y))
-                                        if len(thumbs) == 2:
-                                                if (thumbs[0][0] < thumbs[1][0]):
-                                                        left = thumbs[0][1]
-                                                        right = thumbs[1][1]
-                                                else:
-                                                        left = thumbs[1][1]
-                                                        right = thumbs[0][1]
-                                                self.direction(left, right)
+                        ret, frame = self.cap.read()
 
-                                if len(thumbs) < 2:
-                                        #print("center")
-                                        self.left = False
-                                        self.right = False
-                                #self.moving()
+                        height, width, _ = frame.shape
+                        frame = cv2.flip(frame, 1)
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        results = hands.process(frame_rgb)
+                        thumbs = []
+                        if results.multi_hand_landmarks is not None:
+                                for hand_landmarks in results.multi_hand_landmarks:
+                                        x = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.THUMB_TIP].x * width)
+                                        y = int(hand_landmarks.landmark[self.mp_hands.HandLandmark.THUMB_TIP].y * height)
+                                        cv2.circle(frame, (x, y), 3,(0,255,0),15)
+                                        thumbs.append((x,y))
+                                if len(thumbs) == 2:
+                                        if (thumbs[0][0] < thumbs[1][0]):
+                                                left = thumbs[0][1]
+                                                right = thumbs[1][1]
+                                        else:
+                                                left = thumbs[1][1]
+                                                right = thumbs[0][1]
+                                        self.direction(left, right)
+
+                        if len(thumbs) < 2:
+                                self.left = False
+                                self.right = False
                                                 
-                                #cv2.imshow('Frame',frame)
-                                if cv2.waitKey(1) & 0xFF == 27 or self.death:
-                                    break
-                cap.release()
-                cv2.destroyAllWindows()
 
+                        frame = cv2.resize(frame, self.size_camera)
+                        self.camera_img = cv2image_to_pygame(frame)
+
+##                        if self.death:
+##                                self.cap.release()
+
+        def __del__(self):
+                self.cap.release()
+                
         def down_key(self,key):
                 if key == K_LEFT:
                         self.left = True
@@ -133,8 +147,11 @@ class Player(BASE):
                         self.rect.x += self.speed
                         
         def moving_player(self, screen):
+                self.camera_activate()
                 self.moving()
                 screen.blit(self.image, self.get_position())
+                if self.camera_img:
+                        screen.blit(self.camera_img, self.pos_camera)        
                 
                 
         def is_death(self):
@@ -144,6 +161,12 @@ class Player(BASE):
                 if self.rect.colliderect(collider):
                         self.death = True
                         self.sonido_f.play()
+
+        def refresh(self):
+                self.death = False
+                self.left = False
+                self.right = False
+                super().__init__(self.window_size)
 
 
 class OtherCar(BASE):
@@ -166,7 +189,7 @@ class OtherCar(BASE):
 class GenerateCars:
         def __init__(self, window_size):
                 self.t = 0
-                self.nt = 50
+                self.nt = 15
                 self.window_size = window_size
 
                 self.tail_cars = []
@@ -189,10 +212,14 @@ class GenerateCars:
                                 player.collider_with(car.get_collider())
                                 
                         self.tail_cars = temporal.copy()
-                                        
+                        
+        def refresh(self):
+                self.t = 0
+                self.nt = 15
+                self.tail_cars = []                
                 
 class GenerateVia:
-        speed_sprite = 0.4
+        speed_sprite = 1.0
         def __init__(self, window_size):
                 self.window_size = window_size
 
@@ -212,7 +239,7 @@ class GenerateVia:
                 
                 size = (window_size[0]//2,window_size[1])
                 self.pos_via = (int(window_size[0]*0.25), 0)
-                self.images = load_images(['images/via/via1.png', 'images/via/via2.png', 'images/via/via3.png'], size=size)
+                self.images = load_images(['images/via/via1.png', 'images/via/via2.png'], size=size) # 'images/via/via3.png'
                                         
                 self.actual = 0
                 self.image = self.images[self.actual]
@@ -229,7 +256,7 @@ class GenerateVia:
 
                 score = self.font.render(" km: " + str(int(self.km)), 1, (0,0,0))
                 screen.blit(score, self.pos_score)
-                self.km += 0.2
+                self.km += 0.4
                 
                 player.collider_with(self.rect_l)
                 player.collider_with(self.rect_r)
@@ -240,5 +267,6 @@ class GenerateVia:
                 self.image = sprites[int(self.actual)]
                 self.actual += self.speed_sprite
 
-
+        def refresh(self):
+                self.km = 0
         
