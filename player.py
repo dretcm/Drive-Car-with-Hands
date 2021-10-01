@@ -170,10 +170,11 @@ class Player(BASE):
 
 
 class OtherCar(BASE):
-        def __init__(self, window_size):
+        def __init__(self, window_size, speed):
                 pos_init = [random.randint(int(window_size[0]*0.25), int(window_size[0]*0.75)- self.width), -50]
                 super().__init__(window_size, pos_init)
 
+                self.speed = speed
                 cars = ["images/cars/yellowcar.png", "images/cars/redcar.png",
                         "images/cars/purplecar.png", "images/cars/bluecar.png",
                         "images/cars/greencar.png"]
@@ -194,9 +195,12 @@ class GenerateCars:
 
                 self.tail_cars = []
 
+                self.speed_cars = [15, 20, 25, 30, 40]
+                
+
         def show_cars(self, screen, player):
                 if self.t > self.nt:
-                        NewCar = OtherCar(self.window_size)
+                        NewCar = OtherCar(self.window_size, random.choice(self.speed_cars))
                         self.tail_cars.append(NewCar)
                         self.t = 0
                 else:
@@ -216,7 +220,7 @@ class GenerateCars:
         def refresh(self):
                 self.t = 0
                 self.nt = 15
-                self.tail_cars = []                
+                self.tail_cars = []
                 
 class GenerateVia:
         speed_sprite = 1.0
